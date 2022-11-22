@@ -1,4 +1,4 @@
-src/preprocess/mlruns
+src/*/mlruns
 .idea
 data/train
 data/test

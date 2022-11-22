@@ -5,9 +5,11 @@ from sklearn.model_selection import train_test_split
 import logging
 import mlflow
 
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.exceptions import DataConversionWarning
-from sklearn.compose import make_column_transformer
+from sklearn.pipeline import Pipeline,make_pipeline
+
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder,StandardScaler
+import numpy as np
 
 
 def main():
@@ -30,24 +32,39 @@ def main():
     print("input data:", args.data)
 
     df = pd.read_csv(args.data)
-    df.sample(frac=1)
-    
-    COLS = df.columns
-    newcolorder = ['PAY_AMT1','BILL_AMT1'] + list(COLS[1:])[:11] + list(COLS[1:])[12:17] + list(COLS[1:])[18:]
+
+    #drop cabin feature due to too many missing values
+    df.drop("Cabin",axis=1,inplace=True)
+
+    #fill missing values with mean of cabins age
+    df["Age"] = df[["Age","Pclass"]].apply(AgeImputation,axis=1)
+    # Embarked Column has Just 2 Null values, we will drop that
+    df.dropna(inplace=True)
+    # Drop Redundant Columns like PassengerId, Name, and Ticket 
+    # That's Not Important in Classification Problem
+    df.drop(columns=["PassengerId","Name","Ticket"],inplace=True)
+    # Extract X and y
+    X = df.drop("Survived",axis=1)
+    y = df["Survived"]
     
     random_state=args.random_split
     
-    X_train, X_test, y_train, y_test = train_test_split(df.drop('Label', axis=1), df['Label'], 
-                                                        test_size=args.test_train_ratio, random_state=random_state)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, 
+                                                        test_size=args.test_train_ratio, random_state=random_state, stratify=y)
     
-    preprocess = make_column_transformer(
-        (StandardScaler(),['PAY_AMT1']),
-        (MinMaxScaler(),['BILL_AMT1']),
-    remainder='passthrough')
+    # creating a pipeline for OneHotEncoding of Categorical Columns
+    categorical_processor = ColumnTransformer(transformers=[
+    ("OHE",OneHotEncoder(drop='first'),["Sex","Embarked"]),
+    ],remainder="passthrough")
+
+    pipe = Pipeline(steps=[
+    ("Categorical_Processor",categorical_processor),
+    ("Standard Scaling",StandardScaler())
+    ])
     
     print('Running preprocessing and feature engineering transformations')
-    train_features = pd.DataFrame(preprocess.fit_transform(X_train), columns = newcolorder)
-    test_features = pd.DataFrame(preprocess.transform(X_test), columns = newcolorder)
+    train_features = pd.DataFrame(pipe.fit_transform(X_train))
+    test_features = pd.DataFrame(pipe.transform(X_test))
     
     # concat to ensure Label column is the first column in dataframe
     train_full = pd.concat([pd.DataFrame(y_train.values, columns=['Label']), train_features], axis=1)
@@ -70,6 +87,22 @@ def main():
     # Stop Logging
     mlflow.end_run()
 
+# Age Column Imputation
+def AgeImputation(value):
+    age = value[0]
+    pclass = value[1]
+    
+    if np.isnan(age):
+        if pclass == 1:
+            return 38.10
+        elif pclass == 2:
+            return 29.87
+        else:
+            return 25.14
+        
+    else:
+        return age
+        
 
 if __name__ == "__main__":
     main()
