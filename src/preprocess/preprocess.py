@@ -80,8 +80,11 @@ def main():
     
 
     # output paths are mounted as folder, therefore, we are adding a filename to the path
+    if not os.path.exists(args.train_data):
+        os.mkdir(args.train_data)
     train_full.to_csv(os.path.join(args.train_data, "data.csv"), index=False)
-
+    if not os.path.exists(args.test_data):
+        os.mkdir(args.test_data)
     test_full.to_csv(os.path.join(args.test_data, "data.csv"), index=False)
 
     # Stop Logging

@@ -18,6 +18,12 @@ def select_first_file(path):
     files = os.listdir(path)
     return os.path.join(path, files[0])
 
+def get_model_metrics(model, X,y):
+    preds = model.predict(X)
+    mse = mean_squared_error(preds, y)
+    metrics = {"mse": mse}
+    return metrics
+
 
 # Start Logging
 mlflow.start_run()
@@ -65,10 +71,12 @@ def main():
     
     xgb_model.fit(X_train, y_train)
 
-    y_pred = xgb_model.predict(X_test)
+    #y_pred = xgb_model.predict(X_test)
 
-    print(classification_report(y_test, y_pred))
-
+    #print(classification_report(y_test, y_pred))
+    metrics= get_model_metrics(xgb_model,X_test,y_test)
+    for (k, v) in metrics.items():
+        mlflow.log_metric(f'val_{k}',v)
     # Registering the model to the workspace
     print("Registering the model via MLFlow")
     mlflow.xgboost.log_model(
