@@ -2,3 +2,5 @@ src/*/mlruns
 .idea
 data/train
 data/test
+**/**/.amlignore*
+notebooks/.ipynb_aml_checkpoint

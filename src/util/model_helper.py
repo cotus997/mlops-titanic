@@ -4,6 +4,7 @@ model_helper.py
 from azureml.core import Run
 from azureml.core import Workspace
 from azureml.core.model import Model as AMLModel
+import os
 
 
 def get_current_workspace() -> Workspace:
@@ -85,20 +86,14 @@ def register_aml_model(
     model_tags,
     exp,
     run_id,
-    dataset_id,
-    build_id: str = 'none',
-    build_uri=None
+    dataset_id
 ):
     try:
         tagsValue = {"area": "diabetes_regression",
                      "run_id": run_id,
                      "experiment_name": exp.name}
         tagsValue.update(model_tags)
-        if (build_id != 'none'):
-            model_already_registered(model_name, exp, run_id)
-            tagsValue["BuildId"] = build_id
-            if (build_uri is not None):
-                tagsValue["BuildUri"] = build_uri
+       
 
         model = AMLModel.register(
             workspace=exp.workspace,
