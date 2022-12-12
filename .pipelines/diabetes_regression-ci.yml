@@ -13,9 +13,8 @@ trigger:
   paths:
     include:
     - diabetes_regression/
-    - ml_service/pipelines/diabetes_regression_build_train_pipeline.py
-    - ml_service/pipelines/diabetes_regression_build_train_pipeline_with_r.py
-    - ml_service/pipelines/diabetes_regression_build_train_pipeline_with_r_on_dbricks.py
+    - ml_service/pipelines/build_dev_pipeline.py
+    
 
 variables:
 - template: diabetes_regression-variables-template.yml
@@ -43,7 +42,7 @@ stages:
           set -e # fail on error
           export SUBSCRIPTION_ID=$(az account show --query id -o tsv)
           # Invoke the Python building and publishing a training pipeline
-          python -m ml_service.pipelines.build_dev_pipeline
+          python -m mlservice.pipeline.build_dev_pipeline
       displayName: 'Publish Azure Machine Learning Pipeline'
 
 
