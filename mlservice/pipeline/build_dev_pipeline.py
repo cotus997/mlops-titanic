@@ -1,4 +1,3 @@
-
 from azureml.core import Workspace
 
 
@@ -7,7 +6,9 @@ from azureml.pipeline.core import Pipeline, PipelineData
 from azureml.pipeline.steps import PythonScriptStep
 import os
 
-from utils import getOrCreateCompute,createRunConfig
+
+from mlservice.utils.pipeline_helper import createRunConfig, getOrCreateCompute
+    
 
 
 def main():
@@ -25,7 +26,7 @@ def main():
     #Upload file to datastore
 
     # Use a CSV to read in the data set.
-    file_name = "../../data/rawdata/train.csv"
+    file_name = "data/rawdata/train.csv"
 
     if not os.path.exists(file_name):
         raise Exception(
