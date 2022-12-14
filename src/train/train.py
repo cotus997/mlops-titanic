@@ -118,6 +118,7 @@ def main():
         sk_model=pipe,
         path=os.path.join(args.model, "trained_model")
     )
+    os.rename(os.path.join(args.model, "trained_model","model.pkl"), os.path.join(args.model, "trained_model","titanic-xgb.pkl"))
     #print(f'saved model: {saved_model}\n run info: {mlflow_run.info}')
 
     # Stop Logging
@@ -125,7 +126,7 @@ def main():
 
 
 def retrieve_registered_dataset(ws:Workspace)->pd.DataFrame:
-    exp=mlflow.get_experiment_by_name("pipeline-exp")
+    exp=mlflow.get_experiment_by_name("titanic-pipeline")
     runs=mlflow.search_runs(exp.experiment_id,output_format="list")
     last_run=runs[-2]
 

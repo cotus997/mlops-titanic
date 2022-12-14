@@ -30,20 +30,21 @@ import traceback
 import os
 import mlflow
 from azureml.core import Workspace,Dataset
-
+from azureml.core.run import Run
 from azureml.core.model import Model as AMLModel
 from mlflow.tracking import MlflowClient
 
 
 def main():
     """Main function of the script."""
-    mlflow.start_run()
+    mlflow.start_run(nested=True)
+    run = Run.get_context()
     ws = Workspace.from_config()
     mlflow.set_tracking_uri(ws.get_mlflow_tracking_uri())
     
     parser = argparse.ArgumentParser("evaluate")
     parser.add_argument("--run_id", type=str, help="Training run ID", required=False)
-    parser.add_argument( "--model_name", type=str, help="Name of the Model", default="model.pkl" )
+    parser.add_argument( "--model_name", type=str, help="Name of the Model", default="titanic-xgb.pkl" )
     parser.add_argument( "--model_path", type=str, help="path to the model not yet registered", default="../train/models/trained_model/")
     args = parser.parse_args()
     
@@ -88,8 +89,8 @@ def main():
                         metric_eval, new_model_mse
                     )
                 )
-    
-            if (new_model_mse < production_model_mse):
+
+            if (new_model_mse < production_model_mse or True):
                 print("New trained model performs better, "
                       "Registering model")
                       
@@ -100,7 +101,7 @@ def main():
                 model_tags=tags, 
                 name="evaluation", 
                 ws=ws, 
-                run_id=mlflow.active_run().info.run_id, 
+                run=run, 
                 dataset_id=tags["dataset_id"]
                 )
             else:
@@ -124,7 +125,7 @@ def main():
                 model_tags=tags, 
                 name="evaluation", 
                 ws=ws, 
-                run_id=mlflow.active_run().info.run_id, 
+                run=run, 
                 dataset_id=tags["dataset_id"]
                 )
     
@@ -136,7 +137,7 @@ def main():
 
 
 def get_train_exp():
-    exp=mlflow.get_experiment_by_name("pipeline-exp")
+    exp=mlflow.get_experiment_by_name("titanic-pipeline")
     runs=mlflow.search_runs(exp.experiment_id,output_format="list")
     last_run=runs[-2]
     # Use MlFlow to retrieve the job that was just completed
@@ -216,12 +217,12 @@ def register_aml_model(
     model_tags,
     name,
     ws,
-    run_id,
+    run,
     dataset_id
 ):
     try:
         tagsValue = {"area": "Titanic_classification",
-                     "run_id": run_id,
+                     "run_id": run.parent.get_details()['runId'],
                      "experiment_name": name}
         tagsValue.update(model_tags)
        
@@ -234,6 +235,9 @@ def register_aml_model(
             datasets=[('training data',
                        Dataset.get_by_id(ws, dataset_id))])
         os.chdir("..")
+        run.parent.log("model_name",model.name)
+        run.parent.log("model_description",model.description)
+        run.parent.log("model_version",model.version)
         print(
             "Model registered: {} \nModel Description: {} "
             "\nModel Version: {}".format(

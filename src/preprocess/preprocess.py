@@ -8,7 +8,7 @@ from azure.identity import DefaultAzureCredential
 
 import numpy as np
 from azureml.core import Workspace, Dataset
-
+from azureml.core.run import Run
 
 def main():
     """Main function of the script."""
@@ -55,13 +55,13 @@ def main():
     )'''
     azureml_mlflow_uri= aml_workspace.get_mlflow_tracking_uri()
     mlflow.set_tracking_uri(azureml_mlflow_uri)
-
+    run = Run.get_context()
     #setting experiment name
     experiment_name = args.experiment_name
     #mlflow.set_experiment("preproc")
 
     # Start Logging
-    mlflow.start_run()
+    mlflow.start_run(nested=True)
 
     print(" ".join(f"{k}={v}" for k, v in vars(args).items()))
 
@@ -85,60 +85,17 @@ def main():
     print('Dataset shape after preprocessing: {}'.format(df.shape))
     mlflow.log_metric("num_samples_dataset", df.shape[0])
     mlflow.log_metric("num_features_dataset", df.shape[1] - 1)
+    
+    #run.parent.log("num_samples_dataset", df.shape[0])
+    #run.parent.log("num_features_dataset", df.shape[1] - 1)
+
     dataset_info=register_dataset(df)
     for (k,v) in dataset_info.items():
         print(f'{k} - {v}')
         mlflow.log_param(k,v)
-
-    #Saving to local directory (can be removed since the dataset is registered as a Dataset asset)
-    #if not os.path.exists(args.output_data):
-    #    os.mkdir(args.output_data)
-    #df.to_csv(os.path.join(args.output_data, "data.csv"), index=False)
+        #run.parent.log(k,v)
+    df.to_csv("../../data/train/preprocessed.csv")
     
-    '''
-    # Extract X and y
-    X = df.drop("Survived",axis=1)
-    y = df["Survived"]
-    
-    random_state=args.random_split
-    
-    X_train, X_test, y_train, y_test = train_test_split(X, y, 
-                                                        test_size=args.test_train_ratio, random_state=random_state, stratify=y)
-    
-    # creating a pipeline for OneHotEncoding of Categorical Columns
-    categorical_processor = ColumnTransformer(transformers=[
-    ("OHE",OneHotEncoder(drop='first'),["Sex","Embarked"]),
-    ],remainder="passthrough")
-
-    pipe = Pipeline(steps=[
-    ("Categorical_Processor",categorical_processor),
-    ("Standard Scaling",StandardScaler())
-    ])
-    
-    print('Running preprocessing and feature engineering transformations')
-    train_features = pd.DataFrame(pipe.fit_transform(X_train))
-    test_features = pd.DataFrame(pipe.transform(X_test))
-    
-    # concat to ensure Label column is the first column in dataframe
-    train_full = pd.concat([pd.DataFrame(y_train.values, columns=['Label']), train_features], axis=1)
-    test_full = pd.concat([pd.DataFrame(y_test.values, columns=['Label']), test_features], axis=1)
-    
-    print('Train data shape after preprocessing: {}'.format(train_features.shape))
-    mlflow.log_metric("num_samples_train", train_features.shape[0])
-    mlflow.log_metric("num_features_train", train_features.shape[1] - 1)
-    print('Test data shape after preprocessing: {}'.format(test_features.shape))
-    mlflow.log_metric("num_samples_test", test_features.shape[0])
-    mlflow.log_metric("num_features_test", test_features.shape[1] - 1)
-    
-    
-
-    # output paths are mounted as folder, therefore, we are adding a filename to the path
-    if not os.path.exists(args.train_data):
-        os.mkdir(args.train_data)
-    train_full.to_csv(os.path.join(args.train_data, "data.csv"), index=False)
-    if not os.path.exists(args.test_data):
-        os.mkdir(args.test_data)
-    test_full.to_csv(os.path.join(args.test_data, "data.csv"), index=False)
 
     # Stop Logging'''
     mlflow.end_run()

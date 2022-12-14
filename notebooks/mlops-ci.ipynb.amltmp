@@ -1,0 +1,433 @@
+{
+  "cells": [
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "# imports"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "\n",
+        "from azureml.data.data_reference import DataReference\n",
+        "from azureml.pipeline.core import Pipeline, PipelineData\n",
+        "from azureml.pipeline.steps import PythonScriptStep\n",
+        "import os\n",
+        "\n",
+        "from azureml.core import Workspace,Environment, Experiment\n",
+        "from azureml.core.conda_dependencies import CondaDependencies\n",
+        "\n",
+        "\n",
+        "from azureml.core.runconfig import RunConfiguration\n"
+      ],
+      "outputs": [],
+      "execution_count": 11,
+      "metadata": {
+        "gather": {
+          "logged": 1670961745732
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "# Defining utility function"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def getOrCreateCompute(ws:Workspace):\n",
+        "    \n",
+        "    from azureml.core.compute import AmlCompute\n",
+        "    from azureml.core.compute import ComputeTarget\n",
+        "    from azureml.core.compute_target import ComputeTargetException\n",
+        "\n",
+        "    aml_compute_target = \"testcot\"\n",
+        "    try:\n",
+        "        aml_compute = AmlCompute(ws, aml_compute_target)\n",
+        "        print(\"found existing compute target.\")\n",
+        "    except ComputeTargetException:\n",
+        "        print(\"creating new compute target\")\n",
+        "\n",
+        "        provisioning_config = AmlCompute.provisioning_configuration(vm_size = \"STANDARD_D2_V2\",\n",
+        "                                                                    min_nodes = 0, \n",
+        "                                                                    max_nodes = 4)    \n",
+        "        aml_compute = ComputeTarget.create(ws, aml_compute_target, provisioning_config)\n",
+        "        aml_compute.wait_for_completion(show_output=True, min_node_count=None, timeout_in_minutes=20)\n",
+        "    finally:\n",
+        "        return aml_compute"
+      ],
+      "outputs": [],
+      "execution_count": 2,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def createRunConfig()-> RunConfiguration:\n",
+        "    \n",
+        "    from azure.ai.ml import MLClient\n",
+        "    from azure.identity import DefaultAzureCredential\n",
+        "    # create a new runconfig object\n",
+        "    run_config = RunConfiguration()\n",
+        "    mlclient= MLClient.from_config(DefaultAzureCredential())\n",
+        "    env = mlclient.environments.get(name=\"titanic-env\", version=\"1\")\n",
+        "    \n",
+        "    run_config.environment=env\n",
+        "\n",
+        "    \n",
+        "\n",
+        "    return run_config"
+      ],
+      "outputs": [],
+      "execution_count": 3,
+      "metadata": {}
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "# Build dev pipeline"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "ws = Workspace.from_config()\n",
+        "print(ws.name, ws.resource_group, ws.location, ws.subscription_id, sep = '\\n')\n",
+        "\n",
+        "\n",
+        "# Default datastore (Azure blob storage)\n",
+        "def_blob_store = ws.get_default_datastore()\n",
+        "#def_blob_store = Datastore(ws, \"workspaceblobstore\")\n",
+        "print(\"Blobstore's name: {}\".format(def_blob_store.name))\n",
+        "#Upload file to datastore\n",
+        "\n",
+        "# Use a CSV to read in the data set.\n",
+        "file_name = \"../data/rawdata/train.csv\"\n",
+        "\n",
+        "if not os.path.exists(file_name):\n",
+        "    raise Exception(\n",
+        "        'Could not find CSV dataset at \"%s\". '\n",
+        "        % file_name\n",
+        "    )  # NOQA: E50\n",
+        "# Upload file to default datastore in workspace"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "mlops-aml-ws\nmlops-rg\nwesteurope\nf90533aa-280d-40b9-9949-a7ba0ee9511f\nBlobstore's name: workspaceblobstore\n"
+        }
+      ],
+      "execution_count": 4,
+      "metadata": {}
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "# Uploading data to blob storage"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "target_path = \"training-data/\"\n",
+        "def_blob_store.upload_files(\n",
+        "    files=[file_name],\n",
+        "    target_path=target_path,\n",
+        "    overwrite=True,\n",
+        "    show_progress=False,\n",
+        ")\n",
+        "\n",
+        "blob_input_data = DataReference(\n",
+        "    datastore=def_blob_store,\n",
+        "    data_reference_name=\"test_data\",\n",
+        "    path_on_datastore=\"training-data/train.csv\")\n",
+        "\n",
+        "\n",
+        "aml_compute = getOrCreateCompute(ws)\n",
+        "run_config = createRunConfig()\n",
+        "#processed_data1 = PipelineData(\"processed_data1\",datastore=def_blob_store)\n",
+        "train_data = PipelineData(\"train_data1\",datastore=def_blob_store)"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": "\"datastore.upload_files\" is deprecated after version 1.0.69. Please use \"FileDatasetFactory.upload_directory\" instead. See Dataset API change notice at https://aka.ms/dataset-deprecation.\nFound the config file in: /config.json\n"
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "found existing compute target.\n"
+        }
+      ],
+      "execution_count": 5,
+      "metadata": {
+        "gather": {
+          "logged": 1670961575665
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Preprocess step"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "source_directory=\"../src/preprocess/\"\n",
+        "preprocess_step = PythonScriptStep(\n",
+        "    script_name=\"preprocess.py\", \n",
+        "    arguments=[\"--data\", blob_input_data],\n",
+        "    inputs=[blob_input_data],\n",
+        "    compute_target=aml_compute, \n",
+        "    source_directory=source_directory,\n",
+        "    runconfig=run_config\n",
+        ")"
+      ],
+      "outputs": [],
+      "execution_count": 6,
+      "metadata": {
+        "gather": {
+          "logged": 1670961575794
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "## Training step"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "source_directory=\"../src/train/\"\n",
+        "train_step = PythonScriptStep(\n",
+        "    name=\"Train Model\",\n",
+        "    script_name=\"train.py\",\n",
+        "    compute_target=aml_compute,\n",
+        "    source_directory=source_directory,\n",
+        "    outputs=[train_data],\n",
+        "    arguments=[\n",
+        "        \"--model\",\n",
+        "        train_data\n",
+        "    ],\n",
+        "    runconfig=run_config,\n",
+        "    allow_reuse=True,\n",
+        ")"
+      ],
+      "outputs": [],
+      "execution_count": 7,
+      "metadata": {
+        "gather": {
+          "logged": 1670961575919
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "## Validation step"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "source_directory=\"../src/evaluation/\"\n",
+        "evaluate_step = PythonScriptStep(\n",
+        "    name=\"Evaluate Model \",\n",
+        "    script_name=\"eval.py\",\n",
+        "    compute_target=aml_compute,\n",
+        "    source_directory=source_directory,\n",
+        "    inputs=[train_data],\n",
+        "    arguments=[\n",
+        "        \"--model_path\",\n",
+        "        train_data,\n",
+        "    ],\n",
+        "    runconfig=run_config,\n",
+        "    allow_reuse=False,\n",
+        ")"
+      ],
+      "outputs": [],
+      "execution_count": 8,
+      "metadata": {
+        "gather": {
+          "logged": 1670961576044
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "# Pipeline creation"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.pipeline.core import Pipeline\n",
+        "train_step.run_after(preprocess_step)\n",
+        "evaluate_step.run_after(train_step)\n",
+        "steps = [preprocess_step,train_step, evaluate_step]\n",
+        "\n",
+        "train_pipeline = Pipeline(workspace=ws, steps=steps)\n",
+        "#train_pipeline._set_experiment_name\n"
+      ],
+      "outputs": [
+        {
+          "output_type": "error",
+          "ename": "AttributeError",
+          "evalue": "'Environment' object has no attribute 'python'",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mAttributeError\u001b[0m                            Traceback (most recent call last)",
+            "Input \u001b[0;32mIn [12]\u001b[0m, in \u001b[0;36m<cell line: 6>\u001b[0;34m()\u001b[0m\n\u001b[1;32m      3\u001b[0m evaluate_step\u001b[38;5;241m.\u001b[39mrun_after(train_step)\n\u001b[1;32m      4\u001b[0m steps \u001b[38;5;241m=\u001b[39m [preprocess_step,train_step, evaluate_step]\n\u001b[0;32m----> 6\u001b[0m train_pipeline \u001b[38;5;241m=\u001b[39m \u001b[43mPipeline\u001b[49m\u001b[43m(\u001b[49m\u001b[43mworkspace\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mws\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43msteps\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43msteps\u001b[49m\u001b[43m)\u001b[49m\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/core/_experiment_method.py:104\u001b[0m, in \u001b[0;36mexperiment_method.<locals>.real_decorator.<locals>.wrapper\u001b[0;34m(self, *args, **kwargs)\u001b[0m\n\u001b[1;32m     93\u001b[0m \u001b[38;5;124;03m\"\"\"\u001b[39;00m\n\u001b[1;32m     94\u001b[0m \u001b[38;5;124;03m:param init_func:\u001b[39;00m\n\u001b[1;32m     95\u001b[0m \u001b[38;5;124;03m:type init_func: object\u001b[39;00m\n\u001b[0;32m   (...)\u001b[0m\n\u001b[1;32m    101\u001b[0m \u001b[38;5;124;03m:rtype: object\u001b[39;00m\n\u001b[1;32m    102\u001b[0m \u001b[38;5;124;03m\"\"\"\u001b[39;00m\n\u001b[1;32m    103\u001b[0m ExperimentSubmitRegistrar\u001b[38;5;241m.\u001b[39mregister_submit_function(\u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m\u001b[38;5;18m__class__\u001b[39m, submit_function)\n\u001b[0;32m--> 104\u001b[0m \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[43minit_func\u001b[49m\u001b[43m(\u001b[49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[43margs\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[43mkwargs\u001b[49m\u001b[43m)\u001b[49m\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/pipeline/core/pipeline.py:180\u001b[0m, in \u001b[0;36mPipeline.__init__\u001b[0;34m(self, workspace, steps, description, default_datastore, default_source_directory, resolve_closure, _workflow_provider, _service_endpoint, **kwargs)\u001b[0m\n\u001b[1;32m    178\u001b[0m         \u001b[38;5;28;01mraise\u001b[39;00m \u001b[38;5;167;01mValueError\u001b[39;00m(\u001b[38;5;124m'\u001b[39m\u001b[38;5;124mparameter \u001b[39m\u001b[38;5;132;01m%s\u001b[39;00m\u001b[38;5;124m is not recognized for Pipeline \u001b[39m\u001b[38;5;124m'\u001b[39m \u001b[38;5;241m%\u001b[39m key)\n\u001b[1;32m    179\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_enable_email_notification \u001b[38;5;241m=\u001b[39m enable_email_notification\n\u001b[0;32m--> 180\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_graph \u001b[38;5;241m=\u001b[39m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_graph_builder\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mbuild\u001b[49m\u001b[43m(\u001b[49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_name\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43msteps\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43mfinalize\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[38;5;28;43;01mFalse\u001b[39;49;00m\u001b[43m)\u001b[49m\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/pipeline/core/builder.py:1497\u001b[0m, in \u001b[0;36m_PipelineGraphBuilder.build\u001b[0;34m(self, name, steps, finalize, regenerate_outputs)\u001b[0m\n\u001b[1;32m   1493\u001b[0m     \u001b[38;5;28;01mexcept\u001b[39;00m HttpOperationError:\n\u001b[1;32m   1494\u001b[0m         \u001b[38;5;66;03m# If the workspace does not have a default datastore, keep default_datastore unset\u001b[39;00m\n\u001b[1;32m   1495\u001b[0m         \u001b[38;5;28;01mpass\u001b[39;00m\n\u001b[0;32m-> 1497\u001b[0m graph \u001b[38;5;241m=\u001b[39m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mconstruct\u001b[49m\u001b[43m(\u001b[49m\u001b[43mname\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43msteps\u001b[49m\u001b[43m)\u001b[49m\n\u001b[1;32m   1498\u001b[0m \u001b[38;5;28;01mif\u001b[39;00m finalize:\n\u001b[1;32m   1499\u001b[0m     graph\u001b[38;5;241m.\u001b[39mfinalize(regenerate_outputs\u001b[38;5;241m=\u001b[39mregenerate_outputs)\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/pipeline/core/builder.py:1519\u001b[0m, in \u001b[0;36m_PipelineGraphBuilder.construct\u001b[0;34m(self, name, steps)\u001b[0m\n\u001b[1;32m   1517\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_graph \u001b[38;5;241m=\u001b[39m Graph(name, \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_context)\n\u001b[1;32m   1518\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_nodeStack\u001b[38;5;241m.\u001b[39mappend([])\n\u001b[0;32m-> 1519\u001b[0m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mprocess_collection\u001b[49m\u001b[43m(\u001b[49m\u001b[43msteps\u001b[49m\u001b[43m)\u001b[49m\n\u001b[1;32m   1520\u001b[0m \u001b[38;5;28;01mfor\u001b[39;00m builder \u001b[38;5;129;01min\u001b[39;00m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_builderStack[::\u001b[38;5;241m-\u001b[39m\u001b[38;5;241m1\u001b[39m]:\n\u001b[1;32m   1521\u001b[0m     builder\u001b[38;5;241m.\u001b[39mapply_rules()\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/pipeline/core/builder.py:1555\u001b[0m, in \u001b[0;36m_PipelineGraphBuilder.process_collection\u001b[0;34m(self, collection)\u001b[0m\n\u001b[1;32m   1553\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_nodeStack\u001b[38;5;241m.\u001b[39mappend([])\n\u001b[1;32m   1554\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_builderStack\u001b[38;5;241m.\u001b[39mappend(builder)\n\u001b[0;32m-> 1555\u001b[0m \u001b[43mbuilder\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mprocess_collection\u001b[49m\u001b[43m(\u001b[49m\u001b[43mcollection\u001b[49m\u001b[43m)\u001b[49m\n\u001b[1;32m   1556\u001b[0m added_nodes \u001b[38;5;241m=\u001b[39m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_nodeStack\u001b[38;5;241m.\u001b[39mpop()\n\u001b[1;32m   1557\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_nodeStack[\u001b[38;5;241m-\u001b[39m\u001b[38;5;241m1\u001b[39m]\u001b[38;5;241m.\u001b[39mextend(added_nodes)\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/pipeline/core/builder.py:1846\u001b[0m, in \u001b[0;36m_ParallelPipelineGraphBuilder.process_collection\u001b[0;34m(self, collection)\u001b[0m\n\u001b[1;32m   1839\u001b[0m \u001b[38;5;124;03m\"\"\"\u001b[39;00m\n\u001b[1;32m   1840\u001b[0m \u001b[38;5;124;03mProcess collection.\u001b[39;00m\n\u001b[1;32m   1841\u001b[0m \n\u001b[1;32m   1842\u001b[0m \u001b[38;5;124;03m:param collection: The collection of nodes.\u001b[39;00m\n\u001b[1;32m   1843\u001b[0m \u001b[38;5;124;03m:type collection: builtin.list\u001b[39;00m\n\u001b[1;32m   1844\u001b[0m \u001b[38;5;124;03m\"\"\"\u001b[39;00m\n\u001b[1;32m   1845\u001b[0m \u001b[38;5;28;01mfor\u001b[39;00m item \u001b[38;5;129;01min\u001b[39;00m collection:\n\u001b[0;32m-> 1846\u001b[0m     \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_base_builder\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mprocess_collection\u001b[49m\u001b[43m(\u001b[49m\u001b[43mitem\u001b[49m\u001b[43m)\u001b[49m\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/pipeline/core/builder.py:1549\u001b[0m, in \u001b[0;36m_PipelineGraphBuilder.process_collection\u001b[0;34m(self, collection)\u001b[0m\n\u001b[1;32m   1547\u001b[0m \u001b[38;5;66;03m# just a step?\u001b[39;00m\n\u001b[1;32m   1548\u001b[0m \u001b[38;5;28;01mif\u001b[39;00m \u001b[38;5;28misinstance\u001b[39m(collection, PipelineStep):\n\u001b[0;32m-> 1549\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mprocess_step\u001b[49m\u001b[43m(\u001b[49m\u001b[43mcollection\u001b[49m\u001b[43m)\u001b[49m\n\u001b[1;32m   1551\u001b[0m \u001b[38;5;66;03m# delegate to correct builder\u001b[39;00m\n\u001b[1;32m   1552\u001b[0m builder \u001b[38;5;241m=\u001b[39m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39mcreate_builder(collection)\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/pipeline/core/builder.py:1593\u001b[0m, in \u001b[0;36m_PipelineGraphBuilder.process_step\u001b[0;34m(self, step)\u001b[0m\n\u001b[1;32m   1590\u001b[0m \u001b[38;5;28;01mif\u001b[39;00m step \u001b[38;5;129;01min\u001b[39;00m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_step2node:\n\u001b[1;32m   1591\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_step2node[step]\n\u001b[0;32m-> 1593\u001b[0m node \u001b[38;5;241m=\u001b[39m \u001b[43mstep\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mcreate_node\u001b[49m\u001b[43m(\u001b[49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_graph\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_default_datastore\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_context\u001b[49m\u001b[43m)\u001b[49m\n\u001b[1;32m   1594\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39massert_node_valid(step, \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_graph, node)\n\u001b[1;32m   1596\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_step2node[step] \u001b[38;5;241m=\u001b[39m node\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/pipeline/steps/python_script_step.py:243\u001b[0m, in \u001b[0;36mPythonScriptStep.create_node\u001b[0;34m(self, graph, default_datastore, context)\u001b[0m\n\u001b[1;32m    224\u001b[0m \u001b[38;5;28;01mdef\u001b[39;00m \u001b[38;5;21mcreate_node\u001b[39m(\u001b[38;5;28mself\u001b[39m, graph, default_datastore, context):\n\u001b[1;32m    225\u001b[0m     \u001b[38;5;124;03m\"\"\"\u001b[39;00m\n\u001b[1;32m    226\u001b[0m \u001b[38;5;124;03m    Create a node for PythonScriptStep and add it to the specified graph.\u001b[39;00m\n\u001b[1;32m    227\u001b[0m \n\u001b[0;32m   (...)\u001b[0m\n\u001b[1;32m    241\u001b[0m \u001b[38;5;124;03m    :rtype: azureml.pipeline.core.graph.Node\u001b[39;00m\n\u001b[1;32m    242\u001b[0m \u001b[38;5;124;03m    \"\"\"\u001b[39;00m\n\u001b[0;32m--> 243\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28;43msuper\u001b[39;49m\u001b[43m(\u001b[49m\u001b[43mPythonScriptStep\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[43m)\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mcreate_node\u001b[49m\u001b[43m(\u001b[49m\n\u001b[1;32m    244\u001b[0m \u001b[43m        \u001b[49m\u001b[43mgraph\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mgraph\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43mdefault_datastore\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mdefault_datastore\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43mcontext\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mcontext\u001b[49m\u001b[43m)\u001b[49m\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/pipeline/core/_python_script_step_base.py:156\u001b[0m, in \u001b[0;36m_PythonScriptStepBase.create_node\u001b[0;34m(self, graph, default_datastore, context)\u001b[0m\n\u001b[1;32m    152\u001b[0m \u001b[38;5;28;01mif\u001b[39;00m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_runconfig \u001b[38;5;129;01mis\u001b[39;00m \u001b[38;5;28;01mNone\u001b[39;00m:\n\u001b[1;32m    153\u001b[0m     \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_runconfig \u001b[38;5;241m=\u001b[39m _PythonScriptStepBase\u001b[38;5;241m.\u001b[39m_generate_default_runconfig(compute_target_type)\n\u001b[1;32m    155\u001b[0m node \u001b[38;5;241m=\u001b[39m graph\u001b[38;5;241m.\u001b[39madd_module_node(\u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39mname, input_bindings, output_bindings, \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_params,\n\u001b[0;32m--> 156\u001b[0m                              module_builder\u001b[38;5;241m=\u001b[39mmodule_builder, runconfig\u001b[38;5;241m=\u001b[39m\u001b[38;5;28;43mrepr\u001b[39;49m\u001b[43m(\u001b[49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_runconfig\u001b[49m\u001b[43m)\u001b[49m)\n\u001b[1;32m    158\u001b[0m \u001b[38;5;66;03m# module parameters not set in self._params are set on the node\u001b[39;00m\n\u001b[1;32m    159\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_set_compute_params_to_node(node,\n\u001b[1;32m    160\u001b[0m                                  compute_target_name,\n\u001b[1;32m    161\u001b[0m                                  compute_target_type,\n\u001b[1;32m    162\u001b[0m                                  compute_target_object)\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/core/runconfig.py:1351\u001b[0m, in \u001b[0;36mRunConfiguration.__repr__\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m   1345\u001b[0m \u001b[38;5;28;01mdef\u001b[39;00m \u001b[38;5;21m__repr__\u001b[39m(\u001b[38;5;28mself\u001b[39m):\n\u001b[1;32m   1346\u001b[0m     \u001b[38;5;124;03m\"\"\"Return the string representation of the RunConfiguration object.\u001b[39;00m\n\u001b[1;32m   1347\u001b[0m \n\u001b[1;32m   1348\u001b[0m \u001b[38;5;124;03m    :return: String representation of the RunConfiguration object\u001b[39;00m\n\u001b[1;32m   1349\u001b[0m \u001b[38;5;124;03m    :rtype: str\u001b[39;00m\n\u001b[1;32m   1350\u001b[0m \u001b[38;5;124;03m    \"\"\"\u001b[39;00m\n\u001b[0;32m-> 1351\u001b[0m     run_config_dict \u001b[38;5;241m=\u001b[39m \u001b[43m_serialize_to_dict\u001b[49m\u001b[43m(\u001b[49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[43m)\u001b[49m\n\u001b[1;32m   1352\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m json\u001b[38;5;241m.\u001b[39mdumps(run_config_dict, indent\u001b[38;5;241m=\u001b[39m\u001b[38;5;241m4\u001b[39m)\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/core/_serialization_utils.py:44\u001b[0m, in \u001b[0;36m_serialize_to_dict\u001b[0;34m(entity, use_commented_map)\u001b[0m\n\u001b[1;32m     42\u001b[0m name \u001b[38;5;241m=\u001b[39m to_camel_case(serialized_name)\n\u001b[1;32m     43\u001b[0m \u001b[38;5;28;01mif\u001b[39;00m \u001b[38;5;28mhasattr\u001b[39m(field_info\u001b[38;5;241m.\u001b[39mfield_type, \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124m_serialize_to_dict\u001b[39m\u001b[38;5;124m\"\u001b[39m):\n\u001b[0;32m---> 44\u001b[0m     result[name] \u001b[38;5;241m=\u001b[39m \u001b[43mfield_info\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mfield_type\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_serialize_to_dict\u001b[49m\u001b[43m(\u001b[49m\n\u001b[1;32m     45\u001b[0m \u001b[43m        \u001b[49m\u001b[43mentity\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[38;5;18;43m__dict__\u001b[39;49m\u001b[43m[\u001b[49m\u001b[43mkey\u001b[49m\u001b[43m]\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43muse_commented_map\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43muse_commented_map\u001b[49m\u001b[43m)\u001b[49m\n\u001b[1;32m     46\u001b[0m \u001b[38;5;28;01melse\u001b[39;00m:\n\u001b[1;32m     47\u001b[0m     result[name] \u001b[38;5;241m=\u001b[39m _serialize_to_dict(\n\u001b[1;32m     48\u001b[0m         entity\u001b[38;5;241m.\u001b[39m\u001b[38;5;18m__dict__\u001b[39m[key], use_commented_map\u001b[38;5;241m=\u001b[39muse_commented_map)\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/core/environment.py:1685\u001b[0m, in \u001b[0;36mEnvironment._serialize_to_dict\u001b[0;34m(environment, use_commented_map)\u001b[0m\n\u001b[1;32m   1681\u001b[0m \u001b[38;5;66;03m# _serialization_utils._serialize_to_dict does not serialize condadependencies correctly.\u001b[39;00m\n\u001b[1;32m   1682\u001b[0m \u001b[38;5;66;03m# Hence the work around to copy this in to the env object\u001b[39;00m\n\u001b[1;32m   1684\u001b[0m \u001b[38;5;28;01mif\u001b[39;00m environment \u001b[38;5;129;01mis\u001b[39;00m \u001b[38;5;129;01mnot\u001b[39;00m \u001b[38;5;28;01mNone\u001b[39;00m \u001b[38;5;129;01mand\u001b[39;00m \u001b[38;5;129;01mnot\u001b[39;00m \u001b[38;5;28misinstance\u001b[39m(environment, EnvironmentReference):\n\u001b[0;32m-> 1685\u001b[0m     \u001b[38;5;28;01mif\u001b[39;00m \u001b[43menvironment\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mpython\u001b[49m\u001b[38;5;241m.\u001b[39mconda_dependencies \u001b[38;5;129;01mis\u001b[39;00m \u001b[38;5;129;01mnot\u001b[39;00m \u001b[38;5;28;01mNone\u001b[39;00m:\n\u001b[1;32m   1686\u001b[0m         inline \u001b[38;5;241m=\u001b[39m environment\u001b[38;5;241m.\u001b[39mpython\u001b[38;5;241m.\u001b[39mconda_dependencies\u001b[38;5;241m.\u001b[39m_conda_dependencies\n\u001b[1;32m   1687\u001b[0m         environment_dict[\u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mpython\u001b[39m\u001b[38;5;124m\"\u001b[39m][\u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mcondaDependencies\u001b[39m\u001b[38;5;124m\"\u001b[39m] \u001b[38;5;241m=\u001b[39m inline\n",
+            "\u001b[0;31mAttributeError\u001b[0m: 'Environment' object has no attribute 'python'"
+          ]
+        }
+      ],
+      "execution_count": 12,
+      "metadata": {
+        "gather": {
+          "logged": 1670961750727
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "pipeline_run1 = Experiment(ws, 'titanic-pipeline').submit(train_pipeline)"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {
+        "gather": {
+          "logged": 1670961582316
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "pipeline_run1.wait_for_completion(show_output=True)"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {
+        "gather": {
+          "logged": 1670961582327
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# import required libraries\n",
+        "from azure.ai.ml import MLClient\n",
+        "from azure.ai.ml.entities import (\n",
+        "    ManagedOnlineEndpoint,\n",
+        "    ManagedOnlineDeployment,\n",
+        "    Model,\n",
+        "    Environment,\n",
+        "    CodeConfiguration,\n",
+        ")\n",
+        "from azure.identity import DefaultAzureCredential"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {
+        "gather": {
+          "logged": 1670961582337
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Creating a local endpoint\n",
+        "import datetime\n",
+        "\n",
+        "local_endpoint_name = \"local-\" + datetime.datetime.now().strftime(\"%m%d%H%M%f\")\n",
+        "\n",
+        "# create an online endpoint\n",
+        "endpoint = ManagedOnlineEndpoint(\n",
+        "  name=local_endpoint_name, description=\"this is a sample local endpoint\"\n",
+        ")"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {
+        "gather": {
+          "logged": 1670961582348
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)"
+    },
+    "language_info": {
+      "name": "python",
+      "version": "3.8.5",
+      "mimetype": "text/x-python",
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "pygments_lexer": "ipython3",
+      "nbconvert_exporter": "python",
+      "file_extension": ".py"
+    },
+    "orig_nbformat": 4,
+    "vscode": {
+      "interpreter": {
+        "hash": "6d65a8c07f5b6469e0fc613f182488c0dccce05038bbda39e5ac9075c0454d11"
+      }
+    },
+    "kernel_info": {
+      "name": "python3"
+    },
+    "nteract": {
+      "version": "nteract-front-end@1.0.0"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 2
+}
