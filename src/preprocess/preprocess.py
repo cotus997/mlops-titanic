@@ -10,6 +10,9 @@ import numpy as np
 from azureml.core import Workspace, Dataset
 from azureml.core.run import Run
 
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder,StandardScaler
+
 def main():
     """Main function of the script."""
 
@@ -81,21 +84,29 @@ def main():
     df.drop(columns=["PassengerId","Name","Ticket"],inplace=True)
     df.rename(columns={"Survived":"Label"})
 
-
+    categorical_processor = ColumnTransformer(transformers=[
+    ("OHE",OneHotEncoder(drop='first'),["Sex","Embarked"]),
+    ],remainder="passthrough")
+    columns=df.columns
+    df=pd.DataFrame(data=categorical_processor.fit_transform(df))
+    df.drop(columns=0,inplace=True)
+    
+    df.columns=columns
+    
     print('Dataset shape after preprocessing: {}'.format(df.shape))
     mlflow.log_metric("num_samples_dataset", df.shape[0])
     mlflow.log_metric("num_features_dataset", df.shape[1] - 1)
     
-    #run.parent.log("num_samples_dataset", df.shape[0])
-    #run.parent.log("num_features_dataset", df.shape[1] - 1)
+    
 
     dataset_info=register_dataset(df)
     for (k,v) in dataset_info.items():
         print(f'{k} - {v}')
         mlflow.log_param(k,v)
         #run.parent.log(k,v)
-    df.to_csv("../../data/train/preprocessed.csv")
-    
+    #run.parent.log("num_samples_dataset", df.shape[0])
+    #run.parent.log("num_features_dataset", df.shape[1] - 1)
+    #df.to_csv('../../data/train/preproc.csv')
 
     # Stop Logging'''
     mlflow.end_run()

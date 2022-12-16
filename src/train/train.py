@@ -4,6 +4,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder,StandardScaler
 from sklearn.pipeline import Pipeline
+import joblib
 
 import argparse
 import os
@@ -84,7 +85,6 @@ def main():
     ],remainder="passthrough")
 
     pipe = Pipeline(steps=[
-    ("Categorical_Processor",categorical_processor),
     ("Standard Scaling",StandardScaler()),
     ("Classifier",xgb_model)
     ])
@@ -118,7 +118,8 @@ def main():
         sk_model=pipe,
         path=os.path.join(args.model, "trained_model")
     )
-    os.rename(os.path.join(args.model, "trained_model","model.pkl"), os.path.join(args.model, "trained_model","titanic-xgb.pkl"))
+    joblib.dump(pipe, os.path.join(args.model,"trained_model","titanic-xgb.pkl"))
+    #os.rename(os.path.join(args.model, "trained_model","model.pkl"), os.path.join(args.model, "trained_model","titanic-xgb.pkl"))
     #print(f'saved model: {saved_model}\n run info: {mlflow_run.info}')
 
     # Stop Logging
@@ -135,7 +136,9 @@ def retrieve_registered_dataset(ws:Workspace)->pd.DataFrame:
     finished_mlflow_run = MlflowClient().get_run(run_id)
     params = finished_mlflow_run.data.params
 
-    dataset_id=params['dataset_ID']
+    #dataset_id=params['dataset_ID']
+    dataset_id='b71d85cf-05a6-4e61-9241-454c5f8da8d9'
+    #dataset=Dataset.get_by_id(ws,id=dataset_id)
     dataset=Dataset.get_by_id(ws,id=dataset_id)
     mlflow.set_tag("dataset_id",dataset_id)
     return dataset.to_pandas_dataframe()

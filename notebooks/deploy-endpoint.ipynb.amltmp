@@ -1,0 +1,440 @@
+{
+  "cells": [
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core import Environment, Workspace\n",
+        "from azureml.core.conda_dependencies import CondaDependencies\n",
+        "import sklearn"
+      ],
+      "outputs": [],
+      "execution_count": 76,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import pandas as pd\n",
+        "\n",
+        "preproc_train=pd.read_csv('../data/train/preproc.csv')\n",
+        "preproc_train.drop(columns='Unnamed: 0',inplace=True)\n",
+        "preproc_train.columns\n",
+        "X = preproc_train.drop(\"Survived\",axis=1)\n",
+        "y = preproc_train[\"Survived\"]"
+      ],
+      "outputs": [],
+      "execution_count": 77,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "ws= Workspace.from_config()"
+      ],
+      "outputs": [],
+      "execution_count": 78,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core.model import Model as AMLModel\n",
+        "def get_model(\n",
+        "    model_name: str,\n",
+        "    model_version: int = None,  # If none, return latest model\n",
+        "    tag_name: str = None,\n",
+        "    tag_value: str = None,\n",
+        "    aml_workspace: Workspace = None\n",
+        ") -> AMLModel:\n",
+        "    \"\"\"\n",
+        "    Retrieves and returns a model from the workspace by its name\n",
+        "    and (optional) tag.\n",
+        "\n",
+        "    Parameters:\n",
+        "    aml_workspace (Workspace): aml.core Workspace that the model lives.\n",
+        "    model_name (str): name of the model we are looking for\n",
+        "    (optional) model_version (str): model version. Latest if not provided.\n",
+        "    (optional) tag (str): the tag value & name the model was registered under.\n",
+        "\n",
+        "    Return:\n",
+        "    A single aml model from the workspace that matches the name and tag, or\n",
+        "    None.\n",
+        "    \"\"\"\n",
+        "    if aml_workspace is None:\n",
+        "        print(\"No workspace defined - using current experiment workspace.\")\n",
+        "        raise ValueError(\n",
+        "                \"No workspace provided\"\n",
+        "            )\n",
+        "\n",
+        "    tags = None\n",
+        "    if tag_name is not None or tag_value is not None:\n",
+        "        # Both a name and value must be specified to use tags.\n",
+        "        if tag_name is None or tag_value is None:\n",
+        "            raise ValueError(\n",
+        "                \"model_tag_name and model_tag_value should both be supplied\"\n",
+        "                + \"or excluded\"  # NOQA: E501\n",
+        "            )\n",
+        "        tags = [[tag_name, tag_value]]\n",
+        "\n",
+        "    model = None\n",
+        "    if model_version is not None:\n",
+        "        # TODO(tcare): Finding a specific version currently expects exceptions\n",
+        "        # to propagate in the case we can't find the model. This call may\n",
+        "        # result in a WebserviceException that may or may not be due to the\n",
+        "        # model not existing.\n",
+        "        model = AMLModel(\n",
+        "            aml_workspace,\n",
+        "            name=model_name,\n",
+        "            version=model_version,\n",
+        "            tags=tags)\n",
+        "    else:\n",
+        "        models = AMLModel.list(\n",
+        "            aml_workspace, name=model_name, tags=tags, latest=True)\n",
+        "        if len(models) == 1:\n",
+        "            model = models[0]\n",
+        "        elif len(models) > 1:\n",
+        "            raise Exception(\"Expected only one model\")\n",
+        "\n",
+        "    return model"
+      ],
+      "outputs": [],
+      "execution_count": 79,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azure.ai.ml import MLClient\n",
+        "from azure.identity import DefaultAzureCredential\n",
+        "\n",
+        "ml_client= MLClient.from_config(DefaultAzureCredential())"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": "Found the config file in: /config.json\n"
+        }
+      ],
+      "execution_count": 80,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "model=get_model(\"titanic-xgb.pkl\",aml_workspace=ws)"
+      ],
+      "outputs": [],
+      "execution_count": 86,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "\n",
+        "\n",
+        "\n",
+        "environment = Environment('my-sklearn-environment')\n",
+        "environment.python.conda_dependencies = CondaDependencies.create(conda_packages=[\n",
+        "    'pip==20.2.4'],\n",
+        "    pip_packages=[\n",
+        "    'azureml-defaults',\n",
+        "    'inference-schema[numpy-support]',\n",
+        "    'joblib',\n",
+        "    'numpy',\n",
+        "    \n",
+        "    'xgboost',\n",
+        "    'scikit-learn=={}'.format(sklearn.__version__)\n",
+        "])"
+      ],
+      "outputs": [],
+      "execution_count": 82,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "model"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 83,
+          "data": {
+            "text/plain": "Model(workspace=Workspace.create(name='mlops-aml-ws', subscription_id='f90533aa-280d-40b9-9949-a7ba0ee9511f', resource_group='mlops-rg'), name=titanic-xgb.pkl, id=titanic-xgb.pkl:5, version=5, tags={'area': 'Titanic_classification', 'run_id': '1f9fdd03-05d1-4508-92f9-237fea39c39d', 'experiment_name': 'evaluation', 'azureml.nodeid': '3d62ba08', 'azureml.pipeline': '1f9fdd03-05d1-4508-92f9-237fea39c39d', 'mlflow.source.type': 'JOB', 'mlflow.source.name': 'train.py', 'dataset_id': '84aecbe0-f2bb-4815-b21c-21bb22ffec6d', 'mlflow.parentRunId': '1f9fdd03-05d1-4508-92f9-237fea39c39d', 'mlflow.rootRunId': '1f9fdd03-05d1-4508-92f9-237fea39c39d', 'mlflow.runName': 'magenta_beach_wm03kcg4', 'mlflow.user': 'Giosuè Cotugno', 'mse': '0.02242152466367713'}, properties={})"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 83,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "#import os\n",
+        "#os.chdir('Users/giosue.cotugno/mlops_titanic/notebooks/')"
+      ],
+      "outputs": [],
+      "execution_count": 84,
+      "metadata": {}
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "# Model deploying"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core.model import InferenceConfig\n",
+        "from azureml.core.webservice import AciWebservice\n",
+        "from azureml.core import Model\n",
+        "\n",
+        "\n",
+        "service_name = 'titanic1endpoint'\n",
+        "\n",
+        "inference_config = InferenceConfig(entry_script='../src/scoring/score.py', environment=environment)\n",
+        "aci_config = AciWebservice.deploy_configuration(cpu_cores=1, memory_gb=1)\n",
+        "\n",
+        "service = Model.deploy(workspace=ws,\n",
+        "                       name=service_name,\n",
+        "                       models=[model],\n",
+        "                       inference_config=inference_config,\n",
+        "                       deployment_config=aci_config,\n",
+        "                       overwrite=True)\n",
+        "service.wait_for_deployment(show_output=True)"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": "/tmp/ipykernel_13745/1012544289.py:11: FutureWarning: azureml.core.model:\nTo leverage new model deployment capabilities, AzureML recommends using CLI/SDK v2 to deploy models as online endpoint, \nplease refer to respective documentations \nhttps://docs.microsoft.com/azure/machine-learning/how-to-deploy-managed-online-endpoints /\nhttps://docs.microsoft.com/azure/machine-learning/how-to-deploy-managed-online-endpoint-sdk-v2 /\nhttps://docs.microsoft.com/azure/machine-learning/how-to-attach-kubernetes-anywhere \nFor more information on migration, see https://aka.ms/acimoemigration. \nTo disable CLI/SDK v1 deprecation warning set AZUREML_LOG_DEPRECATION_WARNING_ENABLED to 'False'\n  service = Model.deploy(workspace=ws,\n"
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "Tips: You can try get_logs(): https://aka.ms/debugimage#dockerlog or local deployment: https://aka.ms/debugimage#debug-locally to debug if deployment takes longer than 10 minutes.\nRunning\n2022-12-15 16:26:37+00:00 Creating Container Registry if not exists.\n2022-12-15 16:26:37+00:00 Registering the environment.\n2022-12-15 16:26:38+00:00 Use the existing image.\n2022-12-15 16:26:38+00:00 Generating deployment configuration.\n2022-12-15 16:26:39+00:00 Submitting deployment to compute.\n2022-12-15 16:26:44+00:00 Checking the status of deployment titanic1endpoint..\n2022-12-15 16:29:51+00:00 Checking the status of inference endpoint titanic1endpoint.\nSucceeded\nACI service creation operation finished, operation \"Succeeded\"\n"
+        },
+        {
+          "output_type": "error",
+          "ename": "AttributeError",
+          "evalue": "'NoneType' object has no attribute 'get_logs'",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mAttributeError\u001b[0m                            Traceback (most recent call last)",
+            "\u001b[1;32m/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb Cell 11\u001b[0m in \u001b[0;36m<cell line: 17>\u001b[0;34m()\u001b[0m\n\u001b[1;32m      <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f66393035333361612d323830642d343062392d393934392d6137626130656539353131662f7265736f7572636547726f7570732f6d6c6f70732d52472f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f6d6c6f70732d414d4c2d57532f636f6d70757465732f74657374636f7475/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb#W6sdnNjb2RlLXJlbW90ZQ%3D%3D?line=8'>9</a>\u001b[0m aci_config \u001b[39m=\u001b[39m AciWebservice\u001b[39m.\u001b[39mdeploy_configuration(cpu_cores\u001b[39m=\u001b[39m\u001b[39m1\u001b[39m, memory_gb\u001b[39m=\u001b[39m\u001b[39m1\u001b[39m)\n\u001b[1;32m     <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f66393035333361612d323830642d343062392d393934392d6137626130656539353131662f7265736f7572636547726f7570732f6d6c6f70732d52472f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f6d6c6f70732d414d4c2d57532f636f6d70757465732f74657374636f7475/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb#W6sdnNjb2RlLXJlbW90ZQ%3D%3D?line=10'>11</a>\u001b[0m service \u001b[39m=\u001b[39m Model\u001b[39m.\u001b[39mdeploy(workspace\u001b[39m=\u001b[39mws,\n\u001b[1;32m     <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f66393035333361612d323830642d343062392d393934392d6137626130656539353131662f7265736f7572636547726f7570732f6d6c6f70732d52472f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f6d6c6f70732d414d4c2d57532f636f6d70757465732f74657374636f7475/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb#W6sdnNjb2RlLXJlbW90ZQ%3D%3D?line=11'>12</a>\u001b[0m                        name\u001b[39m=\u001b[39mservice_name,\n\u001b[1;32m     <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f66393035333361612d323830642d343062392d393934392d6137626130656539353131662f7265736f7572636547726f7570732f6d6c6f70732d52472f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f6d6c6f70732d414d4c2d57532f636f6d70757465732f74657374636f7475/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb#W6sdnNjb2RlLXJlbW90ZQ%3D%3D?line=12'>13</a>\u001b[0m                        models\u001b[39m=\u001b[39m[model],\n\u001b[1;32m     <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f66393035333361612d323830642d343062392d393934392d6137626130656539353131662f7265736f7572636547726f7570732f6d6c6f70732d52472f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f6d6c6f70732d414d4c2d57532f636f6d70757465732f74657374636f7475/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb#W6sdnNjb2RlLXJlbW90ZQ%3D%3D?line=13'>14</a>\u001b[0m                        inference_config\u001b[39m=\u001b[39minference_config,\n\u001b[1;32m     <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f66393035333361612d323830642d343062392d393934392d6137626130656539353131662f7265736f7572636547726f7570732f6d6c6f70732d52472f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f6d6c6f70732d414d4c2d57532f636f6d70757465732f74657374636f7475/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb#W6sdnNjb2RlLXJlbW90ZQ%3D%3D?line=14'>15</a>\u001b[0m                        deployment_config\u001b[39m=\u001b[39maci_config,\n\u001b[1;32m     <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f66393035333361612d323830642d343062392d393934392d6137626130656539353131662f7265736f7572636547726f7570732f6d6c6f70732d52472f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f6d6c6f70732d414d4c2d57532f636f6d70757465732f74657374636f7475/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb#W6sdnNjb2RlLXJlbW90ZQ%3D%3D?line=15'>16</a>\u001b[0m                        overwrite\u001b[39m=\u001b[39m\u001b[39mTrue\u001b[39;00m)\n\u001b[0;32m---> <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f66393035333361612d323830642d343062392d393934392d6137626130656539353131662f7265736f7572636547726f7570732f6d6c6f70732d52472f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f6d6c6f70732d414d4c2d57532f636f6d70757465732f74657374636f7475/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb#W6sdnNjb2RlLXJlbW90ZQ%3D%3D?line=16'>17</a>\u001b[0m service\u001b[39m.\u001b[39;49mwait_for_deployment(show_output\u001b[39m=\u001b[39;49m\u001b[39mTrue\u001b[39;49;00m)\u001b[39m.\u001b[39;49mget_logs()\n",
+            "\u001b[0;31mAttributeError\u001b[0m: 'NoneType' object has no attribute 'get_logs'"
+          ]
+        }
+      ],
+      "execution_count": 87,
+      "metadata": {
+        "gather": {
+          "logged": 1671188657183
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "service.wait_for_deployment(show_output=True)"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "Tips: You can try get_logs(): https://aka.ms/debugimage#dockerlog or local deployment: https://aka.ms/debugimage#debug-locally to debug if deployment takes longer than 10 minutes.\nRunning\n2022-12-15 14:53:34+00:00 Creating Container Registry if not exists.\n2022-12-15 14:53:35+00:00 Registering the environment.\n2022-12-15 14:54:07+00:00 Use the existing image.\n2022-12-15 14:54:07+00:00 Generating deployment configuration.\n2022-12-15 14:54:09+00:00 Submitting deployment to compute.\n2022-12-15 14:54:13+00:00 Checking the status of deployment titanic1endpoint.\nFailed\n"
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": "Service deployment polling reached non-successful terminal state, current service state: Failed\nOperation ID: 4bd3b0a3-5703-4845-ae67-3de6e45f793b\nMore information can be found using '.get_logs()'\nError:\n{\n  \"code\": \"AciDeploymentFailed\",\n  \"statusCode\": 400,\n  \"message\": \"Aci Deployment failed with exception: Your container application crashed. This may be caused by errors in your scoring file's init() function.\n\t1. Please check the logs for your container instance: titanic1endpoint. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs.\n\t2. You can interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\n\t3. You can also try to run image cotuamlcr.azurecr.io/azureml/azureml_be191dc2da7d62cdf3db9b0fe4fc6cff locally. Please refer to https://aka.ms/debugimage#service-launch-fails for more information.\",\n  \"details\": [\n    {\n      \"code\": \"CrashLoopBackOff\",\n      \"message\": \"Your container application crashed. This may be caused by errors in your scoring file's init() function.\n\t1. Please check the logs for your container instance: titanic1endpoint. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs.\n\t2. You can interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\n\t3. You can also try to run image cotuamlcr.azurecr.io/azureml/azureml_be191dc2da7d62cdf3db9b0fe4fc6cff locally. Please refer to https://aka.ms/debugimage#service-launch-fails for more information.\"\n    },\n    {\n      \"code\": \"AciDeploymentFailed\",\n      \"message\": \"Your container application crashed. Please follow the steps to debug:\n\t1. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs. Please refer to https://aka.ms/debugimage#dockerlog for more information.\n\t2. If your container application crashed. This may be caused by errors in your scoring file's init() function. You can try debugging locally first. Please refer to https://aka.ms/debugimage#debug-locally for more information.\n\t3. You can also interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\n\t4. View the diagnostic events to check status of container, it may help you to debug the issue.\n\"RestartCount\": 3\n\"CurrentState\": {\"state\":\"Waiting\",\"startTime\":null,\"exitCode\":null,\"finishTime\":null,\"detailStatus\":\"CrashLoopBackOff: Back-off restarting failed\"}\n\"PreviousState\": {\"state\":\"Terminated\",\"startTime\":\"2022-12-15T15:23:03.585Z\",\"exitCode\":111,\"finishTime\":\"2022-12-15T15:22:18.568Z\",\"detailStatus\":\"Error\"}\n\"Events\": null\n\"\n    }\n  ]\n}\n\n"
+        },
+        {
+          "output_type": "error",
+          "ename": "WebserviceException",
+          "evalue": "WebserviceException:\n\tMessage: Service deployment polling reached non-successful terminal state, current service state: Failed\nOperation ID: 4bd3b0a3-5703-4845-ae67-3de6e45f793b\nMore information can be found using '.get_logs()'\nError:\n{\n  \"code\": \"AciDeploymentFailed\",\n  \"statusCode\": 400,\n  \"message\": \"Aci Deployment failed with exception: Your container application crashed. This may be caused by errors in your scoring file's init() function.\n\t1. Please check the logs for your container instance: titanic1endpoint. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs.\n\t2. You can interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\n\t3. You can also try to run image cotuamlcr.azurecr.io/azureml/azureml_be191dc2da7d62cdf3db9b0fe4fc6cff locally. Please refer to https://aka.ms/debugimage#service-launch-fails for more information.\",\n  \"details\": [\n    {\n      \"code\": \"CrashLoopBackOff\",\n      \"message\": \"Your container application crashed. This may be caused by errors in your scoring file's init() function.\n\t1. Please check the logs for your container instance: titanic1endpoint. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs.\n\t2. You can interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\n\t3. You can also try to run image cotuamlcr.azurecr.io/azureml/azureml_be191dc2da7d62cdf3db9b0fe4fc6cff locally. Please refer to https://aka.ms/debugimage#service-launch-fails for more information.\"\n    },\n    {\n      \"code\": \"AciDeploymentFailed\",\n      \"message\": \"Your container application crashed. Please follow the steps to debug:\n\t1. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs. Please refer to https://aka.ms/debugimage#dockerlog for more information.\n\t2. If your container application crashed. This may be caused by errors in your scoring file's init() function. You can try debugging locally first. Please refer to https://aka.ms/debugimage#debug-locally for more information.\n\t3. You can also interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\n\t4. View the diagnostic events to check status of container, it may help you to debug the issue.\n\"RestartCount\": 3\n\"CurrentState\": {\"state\":\"Waiting\",\"startTime\":null,\"exitCode\":null,\"finishTime\":null,\"detailStatus\":\"CrashLoopBackOff: Back-off restarting failed\"}\n\"PreviousState\": {\"state\":\"Terminated\",\"startTime\":\"2022-12-15T15:23:03.585Z\",\"exitCode\":111,\"finishTime\":\"2022-12-15T15:22:18.568Z\",\"detailStatus\":\"Error\"}\n\"Events\": null\n\"\n    }\n  ]\n}\n\tInnerException None\n\tErrorResponse \n{\n    \"error\": {\n        \"message\": \"Service deployment polling reached non-successful terminal state, current service state: Failed\\nOperation ID: 4bd3b0a3-5703-4845-ae67-3de6e45f793b\\nMore information can be found using '.get_logs()'\\nError:\\n{\\n  \\\"code\\\": \\\"AciDeploymentFailed\\\",\\n  \\\"statusCode\\\": 400,\\n  \\\"message\\\": \\\"Aci Deployment failed with exception: Your container application crashed. This may be caused by errors in your scoring file's init() function.\\n\\t1. Please check the logs for your container instance: titanic1endpoint. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs.\\n\\t2. You can interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\\n\\t3. You can also try to run image cotuamlcr.azurecr.io/azureml/azureml_be191dc2da7d62cdf3db9b0fe4fc6cff locally. Please refer to https://aka.ms/debugimage#service-launch-fails for more information.\\\",\\n  \\\"details\\\": [\\n    {\\n      \\\"code\\\": \\\"CrashLoopBackOff\\\",\\n      \\\"message\\\": \\\"Your container application crashed. This may be caused by errors in your scoring file's init() function.\\n\\t1. Please check the logs for your container instance: titanic1endpoint. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs.\\n\\t2. You can interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\\n\\t3. You can also try to run image cotuamlcr.azurecr.io/azureml/azureml_be191dc2da7d62cdf3db9b0fe4fc6cff locally. Please refer to https://aka.ms/debugimage#service-launch-fails for more information.\\\"\\n    },\\n    {\\n      \\\"code\\\": \\\"AciDeploymentFailed\\\",\\n      \\\"message\\\": \\\"Your container application crashed. Please follow the steps to debug:\\n\\t1. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs. Please refer to https://aka.ms/debugimage#dockerlog for more information.\\n\\t2. If your container application crashed. This may be caused by errors in your scoring file's init() function. You can try debugging locally first. Please refer to https://aka.ms/debugimage#debug-locally for more information.\\n\\t3. You can also interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\\n\\t4. View the diagnostic events to check status of container, it may help you to debug the issue.\\n\\\"RestartCount\\\": 3\\n\\\"CurrentState\\\": {\\\"state\\\":\\\"Waiting\\\",\\\"startTime\\\":null,\\\"exitCode\\\":null,\\\"finishTime\\\":null,\\\"detailStatus\\\":\\\"CrashLoopBackOff: Back-off restarting failed\\\"}\\n\\\"PreviousState\\\": {\\\"state\\\":\\\"Terminated\\\",\\\"startTime\\\":\\\"2022-12-15T15:23:03.585Z\\\",\\\"exitCode\\\":111,\\\"finishTime\\\":\\\"2022-12-15T15:22:18.568Z\\\",\\\"detailStatus\\\":\\\"Error\\\"}\\n\\\"Events\\\": null\\n\\\"\\n    }\\n  ]\\n}\"\n    }\n}",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mWebserviceException\u001b[0m                       Traceback (most recent call last)",
+            "\u001b[1;32m/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb Cell 12\u001b[0m in \u001b[0;36m<cell line: 1>\u001b[0;34m()\u001b[0m\n\u001b[0;32m----> <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f66393035333361612d323830642d343062392d393934392d6137626130656539353131662f7265736f7572636547726f7570732f6d6c6f70732d52472f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f6d6c6f70732d414d4c2d57532f636f6d70757465732f74657374636f7475/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb#X32sdnNjb2RlLXJlbW90ZQ%3D%3D?line=0'>1</a>\u001b[0m service\u001b[39m.\u001b[39;49mwait_for_deployment(show_output\u001b[39m=\u001b[39;49m\u001b[39mTrue\u001b[39;49;00m)\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/core/webservice/webservice.py:918\u001b[0m, in \u001b[0;36mWebservice.wait_for_deployment\u001b[0;34m(self, show_output, timeout_sec)\u001b[0m\n\u001b[1;32m    915\u001b[0m         \u001b[39mif\u001b[39;00m \u001b[39mnot\u001b[39;00m logs_response:\n\u001b[1;32m    916\u001b[0m             logs_response \u001b[39m=\u001b[39m \u001b[39m'\u001b[39m\u001b[39mCurrent sub-operation type not known, more logs unavailable.\u001b[39m\u001b[39m'\u001b[39m\n\u001b[0;32m--> 918\u001b[0m         \u001b[39mraise\u001b[39;00m WebserviceException(\u001b[39m'\u001b[39m\u001b[39mService deployment polling reached non-successful terminal state, current \u001b[39m\u001b[39m'\u001b[39m\n\u001b[1;32m    919\u001b[0m                                   \u001b[39m'\u001b[39m\u001b[39mservice state: \u001b[39m\u001b[39m{}\u001b[39;00m\u001b[39m\\n\u001b[39;00m\u001b[39m'\u001b[39m\n\u001b[1;32m    920\u001b[0m                                   \u001b[39m'\u001b[39m\u001b[39mOperation ID: \u001b[39m\u001b[39m{}\u001b[39;00m\u001b[39m\\n\u001b[39;00m\u001b[39m'\u001b[39m\n\u001b[1;32m    921\u001b[0m                                   \u001b[39m'\u001b[39m\u001b[39m{}\u001b[39;00m\u001b[39m\\n\u001b[39;00m\u001b[39m'\u001b[39m\n\u001b[1;32m    922\u001b[0m                                   \u001b[39m'\u001b[39m\u001b[39mError:\u001b[39m\u001b[39m\\n\u001b[39;00m\u001b[39m'\u001b[39m\n\u001b[1;32m    923\u001b[0m                                   \u001b[39m'\u001b[39m\u001b[39m{}\u001b[39;00m\u001b[39m'\u001b[39m\u001b[39m.\u001b[39mformat(\u001b[39mself\u001b[39m\u001b[39m.\u001b[39mstate, \u001b[39mself\u001b[39m\u001b[39m.\u001b[39m_operation_endpoint\u001b[39m.\u001b[39msplit(\u001b[39m'\u001b[39m\u001b[39m/\u001b[39m\u001b[39m'\u001b[39m)[\u001b[39m-\u001b[39m\u001b[39m1\u001b[39m],\n\u001b[1;32m    924\u001b[0m                                               logs_response, format_error_response), logger\u001b[39m=\u001b[39mmodule_logger)\n\u001b[1;32m    925\u001b[0m     \u001b[39mprint\u001b[39m(\u001b[39m'\u001b[39m\u001b[39m{}\u001b[39;00m\u001b[39m service creation operation finished, operation \u001b[39m\u001b[39m\"\u001b[39m\u001b[39m{}\u001b[39;00m\u001b[39m\"\u001b[39m\u001b[39m'\u001b[39m\u001b[39m.\u001b[39mformat(\u001b[39mself\u001b[39m\u001b[39m.\u001b[39m_webservice_type,\n\u001b[1;32m    926\u001b[0m                                                                           operation_state))\n\u001b[1;32m    927\u001b[0m \u001b[39mexcept\u001b[39;00m WebserviceException \u001b[39mas\u001b[39;00m e:\n",
+            "\u001b[0;31mWebserviceException\u001b[0m: WebserviceException:\n\tMessage: Service deployment polling reached non-successful terminal state, current service state: Failed\nOperation ID: 4bd3b0a3-5703-4845-ae67-3de6e45f793b\nMore information can be found using '.get_logs()'\nError:\n{\n  \"code\": \"AciDeploymentFailed\",\n  \"statusCode\": 400,\n  \"message\": \"Aci Deployment failed with exception: Your container application crashed. This may be caused by errors in your scoring file's init() function.\n\t1. Please check the logs for your container instance: titanic1endpoint. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs.\n\t2. You can interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\n\t3. You can also try to run image cotuamlcr.azurecr.io/azureml/azureml_be191dc2da7d62cdf3db9b0fe4fc6cff locally. Please refer to https://aka.ms/debugimage#service-launch-fails for more information.\",\n  \"details\": [\n    {\n      \"code\": \"CrashLoopBackOff\",\n      \"message\": \"Your container application crashed. This may be caused by errors in your scoring file's init() function.\n\t1. Please check the logs for your container instance: titanic1endpoint. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs.\n\t2. You can interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\n\t3. You can also try to run image cotuamlcr.azurecr.io/azureml/azureml_be191dc2da7d62cdf3db9b0fe4fc6cff locally. Please refer to https://aka.ms/debugimage#service-launch-fails for more information.\"\n    },\n    {\n      \"code\": \"AciDeploymentFailed\",\n      \"message\": \"Your container application crashed. Please follow the steps to debug:\n\t1. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs. Please refer to https://aka.ms/debugimage#dockerlog for more information.\n\t2. If your container application crashed. This may be caused by errors in your scoring file's init() function. You can try debugging locally first. Please refer to https://aka.ms/debugimage#debug-locally for more information.\n\t3. You can also interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\n\t4. View the diagnostic events to check status of container, it may help you to debug the issue.\n\"RestartCount\": 3\n\"CurrentState\": {\"state\":\"Waiting\",\"startTime\":null,\"exitCode\":null,\"finishTime\":null,\"detailStatus\":\"CrashLoopBackOff: Back-off restarting failed\"}\n\"PreviousState\": {\"state\":\"Terminated\",\"startTime\":\"2022-12-15T15:23:03.585Z\",\"exitCode\":111,\"finishTime\":\"2022-12-15T15:22:18.568Z\",\"detailStatus\":\"Error\"}\n\"Events\": null\n\"\n    }\n  ]\n}\n\tInnerException None\n\tErrorResponse \n{\n    \"error\": {\n        \"message\": \"Service deployment polling reached non-successful terminal state, current service state: Failed\\nOperation ID: 4bd3b0a3-5703-4845-ae67-3de6e45f793b\\nMore information can be found using '.get_logs()'\\nError:\\n{\\n  \\\"code\\\": \\\"AciDeploymentFailed\\\",\\n  \\\"statusCode\\\": 400,\\n  \\\"message\\\": \\\"Aci Deployment failed with exception: Your container application crashed. This may be caused by errors in your scoring file's init() function.\\n\\t1. Please check the logs for your container instance: titanic1endpoint. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs.\\n\\t2. You can interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\\n\\t3. You can also try to run image cotuamlcr.azurecr.io/azureml/azureml_be191dc2da7d62cdf3db9b0fe4fc6cff locally. Please refer to https://aka.ms/debugimage#service-launch-fails for more information.\\\",\\n  \\\"details\\\": [\\n    {\\n      \\\"code\\\": \\\"CrashLoopBackOff\\\",\\n      \\\"message\\\": \\\"Your container application crashed. This may be caused by errors in your scoring file's init() function.\\n\\t1. Please check the logs for your container instance: titanic1endpoint. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs.\\n\\t2. You can interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\\n\\t3. You can also try to run image cotuamlcr.azurecr.io/azureml/azureml_be191dc2da7d62cdf3db9b0fe4fc6cff locally. Please refer to https://aka.ms/debugimage#service-launch-fails for more information.\\\"\\n    },\\n    {\\n      \\\"code\\\": \\\"AciDeploymentFailed\\\",\\n      \\\"message\\\": \\\"Your container application crashed. Please follow the steps to debug:\\n\\t1. From the AML SDK, you can run print(service.get_logs()) if you have service object to fetch the logs. Please refer to https://aka.ms/debugimage#dockerlog for more information.\\n\\t2. If your container application crashed. This may be caused by errors in your scoring file's init() function. You can try debugging locally first. Please refer to https://aka.ms/debugimage#debug-locally for more information.\\n\\t3. You can also interactively debug your scoring file locally. Please refer to https://docs.microsoft.com/azure/machine-learning/how-to-debug-visual-studio-code#debug-and-troubleshoot-deployments for more information.\\n\\t4. View the diagnostic events to check status of container, it may help you to debug the issue.\\n\\\"RestartCount\\\": 3\\n\\\"CurrentState\\\": {\\\"state\\\":\\\"Waiting\\\",\\\"startTime\\\":null,\\\"exitCode\\\":null,\\\"finishTime\\\":null,\\\"detailStatus\\\":\\\"CrashLoopBackOff: Back-off restarting failed\\\"}\\n\\\"PreviousState\\\": {\\\"state\\\":\\\"Terminated\\\",\\\"startTime\\\":\\\"2022-12-15T15:23:03.585Z\\\",\\\"exitCode\\\":111,\\\"finishTime\\\":\\\"2022-12-15T15:22:18.568Z\\\",\\\"detailStatus\\\":\\\"Error\\\"}\\n\\\"Events\\\": null\\n\\\"\\n    }\\n  ]\\n}\"\n    }\n}"
+          ]
+        }
+      ],
+      "execution_count": null,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "service"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 74,
+          "data": {
+            "text/plain": "AciWebservice(workspace=Workspace.create(name='mlops-aml-ws', subscription_id='f90533aa-280d-40b9-9949-a7ba0ee9511f', resource_group='mlops-rg'), name=titanic1endpoint, image_id=None, image_digest=None, compute_type=ACI, state=Failed, scoring_uri=None, tags=None, properties={'azureml.git.repository_uri': 'git@github.com:cotus997/mlops-titanic.git', 'mlflow.source.git.repoURL': 'git@github.com:cotus997/mlops-titanic.git', 'azureml.git.branch': 'main', 'mlflow.source.git.branch': 'main', 'azureml.git.commit': 'c2e076d2a23cea4735b3947b6066024bdd239d57', 'mlflow.source.git.commit': 'c2e076d2a23cea4735b3947b6066024bdd239d57', 'azureml.git.dirty': 'True'}, created_by={'userObjectId': '0ede9b9c-2b54-4172-a26d-bbeff841eda9', 'userPuId': '10037FFEA30E4C08', 'userIdp': None, 'userAltSecId': None, 'userIss': 'https://sts.windows.net/e99647dc-1b08-454a-bf8c-699181b389ab/', 'userTenantId': 'e99647dc-1b08-454a-bf8c-699181b389ab', 'userName': 'Giosuè Cotugno', 'upn': 'giosue.cotugno@studio.unibo.it'})"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": null,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import json\n",
+        "import numpy\n",
+        "\n",
+        "input_payload = json.dumps({\n",
+        "    'data': X[0:2].tolist(),\n",
+        "    'method': 'predict_proba'  # If you have a classification model, you can get probabilities by changing this to 'predict_proba'.\n",
+        "})\n",
+        "\n",
+        "output = service.run(input_payload)\n",
+        "\n",
+        "print(output)"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "service.delete()"
+      ],
+      "outputs": [
+        {
+          "output_type": "error",
+          "ename": "WebserviceException",
+          "evalue": "WebserviceException:\n\tMessage: There is a deployment operation in flight for the Service: titanic1endpoint\n\tInnerException None\n\tErrorResponse \n{\n    \"error\": {\n        \"message\": \"There is a deployment operation in flight for the Service: titanic1endpoint\"\n    }\n}",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mWebserviceException\u001b[0m                       Traceback (most recent call last)",
+            "\u001b[1;32m/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb Cell 14\u001b[0m in \u001b[0;36m<cell line: 1>\u001b[0;34m()\u001b[0m\n\u001b[0;32m----> <a href='vscode-notebook-cell://amlext%2B2f737562736372697074696f6e732f66393035333361612d323830642d343062392d393934392d6137626130656539353131662f7265736f7572636547726f7570732f6d6c6f70732d52472f70726f7669646572732f4d6963726f736f66742e4d616368696e654c6561726e696e6753657276696365732f776f726b7370616365732f6d6c6f70732d414d4c2d57532f636f6d70757465732f74657374636f7475/home/azureuser/cloudfiles/code/Users/giosue.cotugno/mlops_titanic/notebooks/deploy-endpoint.ipynb#X11sdnNjb2RlLXJlbW90ZQ%3D%3D?line=0'>1</a>\u001b[0m service\u001b[39m.\u001b[39;49mdelete()\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/core/webservice/webservice.py:1419\u001b[0m, in \u001b[0;36mWebservice.delete\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m   1409\u001b[0m \u001b[39mdef\u001b[39;00m \u001b[39mdelete\u001b[39m(\u001b[39mself\u001b[39m):\n\u001b[1;32m   1410\u001b[0m     \u001b[39m\"\"\"\u001b[39;00m\n\u001b[1;32m   1411\u001b[0m \u001b[39m    Delete this Webservice from its associated workspace.\u001b[39;00m\n\u001b[1;32m   1412\u001b[0m \n\u001b[0;32m   (...)\u001b[0m\n\u001b[1;32m   1417\u001b[0m \u001b[39m    :raises: :class:`azureml.exceptions.WebserviceException`\u001b[39;00m\n\u001b[1;32m   1418\u001b[0m \u001b[39m    \"\"\"\u001b[39;00m\n\u001b[0;32m-> 1419\u001b[0m     Webservice\u001b[39m.\u001b[39;49m_check_for_webservice(\u001b[39mself\u001b[39;49m\u001b[39m.\u001b[39;49mworkspace, \u001b[39mself\u001b[39;49m\u001b[39m.\u001b[39;49mname, \u001b[39mself\u001b[39;49m\u001b[39m.\u001b[39;49mcompute_type,\n\u001b[1;32m   1420\u001b[0m                                      \u001b[39mNone\u001b[39;49;00m, SERVICE_REQUEST_OPERATION_DELETE)\n\u001b[1;32m   1422\u001b[0m     headers \u001b[39m=\u001b[39m \u001b[39mself\u001b[39m\u001b[39m.\u001b[39m_auth\u001b[39m.\u001b[39mget_authentication_header()\n\u001b[1;32m   1423\u001b[0m     params \u001b[39m=\u001b[39m {}\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/core/webservice/webservice.py:744\u001b[0m, in \u001b[0;36mWebservice._check_for_webservice\u001b[0;34m(workspace, name, compute_type, payload, action, request_func, check_func)\u001b[0m\n\u001b[1;32m    741\u001b[0m     \u001b[39mdef\u001b[39;00m \u001b[39mcheck_func\u001b[39m(content):\n\u001b[1;32m    742\u001b[0m         \u001b[39mreturn\u001b[39;00m Webservice\u001b[39m.\u001b[39m_check_validate_error(content)\n\u001b[0;32m--> 744\u001b[0m Webservice\u001b[39m.\u001b[39;49m_run_validate_framework(request_func, check_func)\n",
+            "File \u001b[0;32m/anaconda/envs/azureml_py38/lib/python3.8/site-packages/azureml/core/webservice/webservice.py:638\u001b[0m, in \u001b[0;36mWebservice._run_validate_framework\u001b[0;34m(request_func, check_func)\u001b[0m\n\u001b[1;32m    635\u001b[0m \u001b[39mif\u001b[39;00m \u001b[39mnot\u001b[39;00m error:\n\u001b[1;32m    636\u001b[0m     \u001b[39mreturn\u001b[39;00m\n\u001b[0;32m--> 638\u001b[0m \u001b[39mraise\u001b[39;00m WebserviceException(error)\n",
+            "\u001b[0;31mWebserviceException\u001b[0m: WebserviceException:\n\tMessage: There is a deployment operation in flight for the Service: titanic1endpoint\n\tInnerException None\n\tErrorResponse \n{\n    \"error\": {\n        \"message\": \"There is a deployment operation in flight for the Service: titanic1endpoint\"\n    }\n}"
+          ]
+        }
+      ],
+      "execution_count": null,
+      "metadata": {}
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "# Multi model endpoint"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "model_1=get_model(\"titanic-xgb.pkl\",aml_workspace=ws)\n",
+        "model_2=get_model(\"my-sklearn-model\",aml_workspace=ws)"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "inference_config = InferenceConfig(entry_script=\"../src/scoring/score.py\", environment=environment)"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core.webservice import AciWebservice\n",
+        "\n",
+        "aci_service_name = \"aciservice-multimodel\"\n",
+        "\n",
+        "deployment_config = AciWebservice.deploy_configuration(cpu_cores=1, memory_gb=1)\n",
+        "\n",
+        "service = Model.deploy(ws, aci_service_name, [model_1, model_2], inference_config, deployment_config, overwrite=True)\n",
+        "service.wait_for_deployment(True)\n",
+        "\n",
+        "print(service.state)"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {}
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "# Test web service"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import json\n",
+        "\n",
+        "test_sample = json.dumps({'data': X[0:2].tolist()})\n",
+        "\n",
+        "prediction = service.run(test_sample)\n",
+        "\n",
+        "print(prediction)"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "service.delete()"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {}
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python38-azureml",
+      "language": "python",
+      "display_name": "Python 3.8 - AzureML"
+    },
+    "orig_nbformat": 4,
+    "language_info": {
+      "name": "python",
+      "version": "3.8.5",
+      "mimetype": "text/x-python",
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "pygments_lexer": "ipython3",
+      "nbconvert_exporter": "python",
+      "file_extension": ".py"
+    },
+    "kernel_info": {
+      "name": "python38-azureml"
+    },
+    "nteract": {
+      "version": "nteract-front-end@1.0.0"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 2
+}

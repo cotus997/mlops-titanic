@@ -230,7 +230,7 @@ def register_aml_model(
         model = AMLModel.register(
             workspace=ws,
             model_name=model_name,
-            model_path=model_path,
+            model_path=os.path.join(model_path,'trained_model',model_name),
             tags=tagsValue,
             datasets=[('training data',
                        Dataset.get_by_id(ws, dataset_id))])

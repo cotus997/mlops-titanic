@@ -1,7 +1,7 @@
 import joblib
 import numpy as np
 import os
-
+from azureml.monitoring import ModelDataCollector
 from inference_schema.schema_decorators import input_schema, output_schema
 from inference_schema.parameter_types.numpy_parameter_type import NumpyParameterType
 
@@ -12,7 +12,10 @@ from inference_schema.parameter_types.numpy_parameter_type import NumpyParameter
 # and store it in a global variable so your run() method can access it later.
 def init():
     global model
-
+    global inputs_dc, prediction_dc
+    #Survived,Pclass,Sex,Age,SibSp,Parch,Fare,Embarked
+    inputs_dc = ModelDataCollector("best_model", designation="inputs", feature_names=["Pclass", "Age", "Sex", "SibSp", "Parch", "Fare", "Embarked"])
+    prediction_dc = ModelDataCollector("best_model", designation="predictions", feature_names=["Survived"])
     # The AZUREML_MODEL_DIR environment variable indicates
     # a directory containing the model file you registered.
     model_filename = 'titanic-xgb.pkl'
@@ -33,6 +36,9 @@ def init():
 def run(data):
     # Use the model object loaded by init().
     result = model.predict(data)
-
+    data = np.array(data)
+    result = model.predict(data)
+    inputs_dc.collect(data) #this call is saving our input data into Azure Blob
+    prediction_dc.collect(result) #this call is saving our prediction data into Azure Blob
     # You can return any JSON-serializable object.
     return result.tolist()
