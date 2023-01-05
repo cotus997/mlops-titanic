@@ -3,6 +3,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder,StandardScaler
+from sklearn.metrics import precision_recall_fscore_support
 from sklearn.pipeline import Pipeline
 import joblib
 
@@ -29,8 +30,9 @@ def select_first_file(path):
 
 def get_model_metrics(model, X,y):
     preds = model.predict(X)
+    precision,recall,fscore,support=precision_recall_fscore_support(y,preds,average='binary')
     mse = mean_squared_error(preds, y)
-    metrics = {"mse": mse}
+    metrics = {"mse": mse,"precision":precision,"recall":recall,"fscore":fscore,"support":support}
     return metrics
 
 
@@ -103,7 +105,7 @@ def main():
     #print(classification_report(y_test, y_pred))
     metrics= get_model_metrics(pipe,X_test,y_test)
     for (k, v) in metrics.items():
-        mlflow.log_metric(f'mse',v)
+        mlflow.log_metric(k,v)
     # Registering the model to the workspace
     print("Saved model via MLFlow")
     #mlflow.xgboost.log_model(

@@ -1,3 +1,4 @@
+
 """
 Copyright (C) Microsoft Corporation. All rights reserved.​
  ​
@@ -51,11 +52,13 @@ def main():
     
     model_name = args.model_name
     model_path = args.model_path
-    metric_eval = "mse"
+    metric_eval = ["mse","precision","recall","fscore"]
     metrics,tags,params=get_train_exp()
     print(metrics)
     allow_run_cancel="true"
-    
+    properties={}
+    for elm in metric_eval:
+        properties[elm]=metrics[elm]
     
     
     # Parameterize the matrices on which the models should be compared
@@ -66,11 +69,12 @@ def main():
         
     
         
-        tags[metric_eval]=metrics[metric_eval]
+        tags[metric_eval[0]]=metrics[metric_eval[0]]
         register_aml_model(
             model_path=model_path,
             model_name=model_name, 
-            model_tags=tags, 
+            model_tags=tags,
+            property=properties, 
             name="evaluation", 
             ws=ws, 
             run=run, 
@@ -163,6 +167,7 @@ def register_aml_model(
     model_path,
     model_name,
     model_tags,
+    property,
     name,
     ws,
     run,
@@ -173,13 +178,13 @@ def register_aml_model(
                      "run_id": run.parent.get_details()['runId'],
                      "experiment_name": name}
         tagsValue.update(model_tags)
-       
 
         model = AMLModel.register(
             workspace=ws,
-            model_name=model_name,
+            model_name="Titanic-xgb",
             model_path=os.path.join(model_path,'trained_model',model_name),
             tags=tagsValue,
+            properties=property,
             datasets=[('training data',
                        Dataset.get_by_id(ws, dataset_id))])
         os.chdir("..")

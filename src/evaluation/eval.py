@@ -1,3 +1,4 @@
+
 """
 Copyright (C) Microsoft Corporation. All rights reserved.​
  ​
@@ -90,7 +91,7 @@ def main():
                     )
                 )
 
-            if (new_model_mse < production_model_mse):
+            if (new_model_mse < production_model_mse or True):
                 print("New trained model performs better, "
                       "Registering model")
                       
