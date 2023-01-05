@@ -79,7 +79,7 @@ def main():
                 print("Unable to find ", metric_eval, " metrics, "
                       "exiting evaluation")
                 if((allow_run_cancel).lower() == 'true'):
-                    #run.parent.cancel()
+                    run.parent.cancel()
                     pass
             else:
                 print(
@@ -90,44 +90,20 @@ def main():
                     )
                 )
 
-            if (new_model_mse < production_model_mse or True):
+            if (new_model_mse < production_model_mse):
                 print("New trained model performs better, "
                       "Registering model")
                       
-                tags[metric_eval]=metrics[metric_eval]
-                register_aml_model(
-                model_path=model_path,
-                model_name=model_name, 
-                model_tags=tags, 
-                name="evaluation", 
-                ws=ws, 
-                run=run, 
-                dataset_id=tags["dataset_id"]
-                )
+                
             else:
                 print("New trained model metric is worse than or equal to "
                       "production model so skipping model registration.")
                 if((allow_run_cancel).lower() == 'true'):
-                    #run.parent.cancel()
-                    pass
+                    run.parent.cancel()
         else:
-            # model_path,
-            # model_name,
-            # model_tags,
-            # name,
-            # ws,
-            # run_id,
-            # dataset_id
-            tags[metric_eval]=metrics[metric_eval]
-            register_aml_model(
-                model_path=model_path,
-                model_name=model_name, 
-                model_tags=tags, 
-                name="evaluation", 
-                ws=ws, 
-                run=run, 
-                dataset_id=tags["dataset_id"]
-                )
+            print("New Model, "
+                      "Registering model")
+                      
     
     except Exception:
         traceback.print_exc(limit=None, file=None, chain=True)
@@ -211,43 +187,7 @@ def get_model(
     return model
 
 
-def register_aml_model(
-    model_path,
-    model_name,
-    model_tags,
-    name,
-    ws,
-    run,
-    dataset_id
-):
-    try:
-        tagsValue = {"area": "Titanic_classification",
-                     "run_id": run.parent.get_details()['runId'],
-                     "experiment_name": name}
-        tagsValue.update(model_tags)
-       
 
-        model = AMLModel.register(
-            workspace=ws,
-            model_name=model_name,
-            model_path=os.path.join(model_path,'trained_model',model_name),
-            tags=tagsValue,
-            datasets=[('training data',
-                       Dataset.get_by_id(ws, dataset_id))])
-        os.chdir("..")
-        run.parent.log("model_name",model.name)
-        run.parent.log("model_description",model.description)
-        run.parent.log("model_version",model.version)
-        print(
-            "Model registered: {} \nModel Description: {} "
-            "\nModel Version: {}".format(
-                model.name, model.description, model.version
-            )
-        )
-    except Exception:
-        traceback.print_exc(limit=None, file=None, chain=True)
-        print("Model registration failed")
-        raise
 
 if __name__ == "__main__":
     main()
