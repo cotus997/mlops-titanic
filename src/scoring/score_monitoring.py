@@ -1,6 +1,6 @@
 import joblib
 import numpy as np
-#import pandas as pd
+import pandas as pd
 import os
 from azureml.monitoring import ModelDataCollector
 from inference_schema.schema_decorators import input_schema, output_schema
@@ -39,9 +39,9 @@ def run(data):
     #data = json.loads(raw_data)['data']
     #data = np.array(data)
     result = model.predict(data)
-    print(f'data: {type(data)} result: {type(result)}')
-    inputs_dc.collect(data.tolist()) #this call is saving our input data into Azure Blob
-    res=prediction_dc.collect(result.tolist()) #this call is saving our prediction data into Azure Blob
+    print(f'data: {data} result: {type(result)}')
+    inputs_dc.collect(data[0]) #this call is saving our input data into Azure Blob
+    res=prediction_dc.collect(result) #this call is saving our prediction data into Azure Blob
     print(res)
     print(f"mdc:{inputs_dc}")
     # You can return any JSON-serializable object.
